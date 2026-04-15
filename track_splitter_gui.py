@@ -29,6 +29,21 @@ def _find_tool(name):
     if sys.platform != "win32":
         return None
 
+    # Try 'where' via subprocess — reads the live system PATH, which fixes cases
+    # where the user installed ffmpeg but launched the EXE before their shell
+    # picked up the new PATH (e.g. opened via desktop shortcut).
+    try:
+        result = subprocess.run(
+            ["where", name], capture_output=True, text=True,
+            creationflags=0x08000000,
+        )
+        if result.returncode == 0:
+            first = result.stdout.strip().splitlines()[0].strip()
+            if os.path.isfile(first):
+                return first
+    except Exception:
+        pass
+
     exe = name + ".exe"
     candidates = [
         # Manual installs
@@ -40,13 +55,21 @@ def _find_tool(name):
         # Scoop
         os.path.expandvars(rf"%USERPROFILE%\scoop\shims\{exe}"),
         os.path.expandvars(rf"%USERPROFILE%\scoop\apps\ffmpeg\current\bin\{exe}"),
+        # winget (packages land in a versioned subfolder — glob the parent)
+        os.path.expandvars(rf"%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_*\ffmpeg*\bin\{exe}"),
+        os.path.expandvars(rf"%LOCALAPPDATA%\Microsoft\WinGet\Links\{exe}"),
         # winget / user Programs
         os.path.expandvars(rf"%LOCALAPPDATA%\Programs\ffmpeg\bin\{exe}"),
         os.path.expandvars(rf"%USERPROFILE%\ffmpeg\bin\{exe}"),
     ]
-    for path in candidates:
-        if os.path.isfile(path):
-            return path
+    import glob as _glob
+    for pattern in candidates:
+        # Support wildcard patterns (winget versioned dirs)
+        matches = _glob.glob(pattern)
+        if matches:
+            return matches[0]
+        if os.path.isfile(pattern):
+            return pattern
     return None
 
 
