@@ -13,10 +13,59 @@ import sys
 import os
 import zipfile
 import threading
+import shutil
 from pathlib import Path
 
 # Suppress CMD window popups on Windows for every ffmpeg call
 _NO_WINDOW = {"creationflags": 0x08000000} if sys.platform == "win32" else {}
+
+
+def _find_tool(name):
+    """Find ffmpeg/ffprobe — checks PATH first, then common Windows install locations."""
+    found = shutil.which(name)
+    if found:
+        return found
+
+    if sys.platform != "win32":
+        return None
+
+    exe = name + ".exe"
+    candidates = [
+        # Manual installs
+        rf"C:\ffmpeg\bin\{exe}",
+        rf"C:\Program Files\ffmpeg\bin\{exe}",
+        rf"C:\Program Files (x86)\ffmpeg\bin\{exe}",
+        # Chocolatey
+        rf"C:\ProgramData\chocolatey\bin\{exe}",
+        # Scoop
+        os.path.expandvars(rf"%USERPROFILE%\scoop\shims\{exe}"),
+        os.path.expandvars(rf"%USERPROFILE%\scoop\apps\ffmpeg\current\bin\{exe}"),
+        # winget / user Programs
+        os.path.expandvars(rf"%LOCALAPPDATA%\Programs\ffmpeg\bin\{exe}"),
+        os.path.expandvars(rf"%USERPROFILE%\ffmpeg\bin\{exe}"),
+    ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+_FFMPEG  = None
+_FFPROBE = None
+
+
+def _get_ffmpeg():
+    global _FFMPEG
+    if _FFMPEG is None:
+        _FFMPEG = _find_tool("ffmpeg") or "ffmpeg"
+    return _FFMPEG
+
+
+def _get_ffprobe():
+    global _FFPROBE
+    if _FFPROBE is None:
+        _FFPROBE = _find_tool("ffprobe") or "ffprobe"
+    return _FFPROBE
 
 
 def resource_path(filename):
@@ -119,7 +168,7 @@ def sanitize_filename(name):
 
 
 def get_audio_duration(filepath):
-    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+    cmd = [_get_ffprobe(), "-v", "error", "-show_entries", "format=duration",
            "-of", "default=noprint_wrappers=1:nokey=1", filepath]
     result = subprocess.run(cmd, capture_output=True, text=True, **_NO_WINDOW)
     return float(result.stdout.strip())
@@ -127,14 +176,14 @@ def get_audio_duration(filepath):
 
 def ffmpeg_available():
     try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, **_NO_WINDOW)
+        subprocess.run([_get_ffmpeg(), "-version"], capture_output=True, check=True, **_NO_WINDOW)
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
 
 
 def extract_track(mp3, cover, output_path, start, duration, title, track_num, album, artist):
-    cmd = ["ffmpeg", "-y", "-ss", str(start), "-t", str(duration), "-i", mp3]
+    cmd = [_get_ffmpeg(), "-y", "-ss", str(start), "-t", str(duration), "-i", mp3]
     if cover and os.path.exists(cover):
         cmd += ["-i", cover, "-map", "0:a", "-map", "1:v",
                 "-c:v", "png", "-disposition:v", "attached_pic",
@@ -608,7 +657,8 @@ class App(tk.Tk):
             "  1. Go to  https://ffmpeg.org/download.html\n"
             "  2. Download a Windows build (e.g. from gyan.dev)\n"
             "  3. Extract it and add the bin\\ folder to your PATH\n\n"
-            "Restart Track Splitter after installing.",
+            "After installing, sign out of Windows and back in,\n"
+            "then restart Track Splitter.",
         )
 
 
