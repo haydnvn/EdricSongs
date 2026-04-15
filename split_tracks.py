@@ -2,7 +2,6 @@ import re
 import subprocess
 import os
 from pathlib import Path
-
 # Configuration
 TIMESTAMPS_FILE = "TimeStamps.txt"
 INPUT_MP3 = "kinsley grey - WAKE ME UP MIX.mp3"
